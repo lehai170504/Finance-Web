@@ -42,6 +42,7 @@ public class DatabaseSeeder implements CommandLineRunner {
             admin.setUsername("admin");
             admin.setPassword(passwordEncoder.encode("123456")); // Nhớ mã hóa mật khẩu nhé
             admin.setEmail("admin@homie.com");
+            admin.setRole(User.Role.ADMIN);
             userRepository.save(admin);
             System.out.println("✅ Đã tạo User: admin / 123456");
 

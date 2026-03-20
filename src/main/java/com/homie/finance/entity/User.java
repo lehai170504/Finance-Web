@@ -27,6 +27,21 @@ public class User {
     @Email(message = "Email không hợp lệ")
     @Schema(description = "Email liên hệ", example = "homie@gmail.com")
     private String email;
+
     private String otp;
     private java.time.Instant otpExpiry;
+
+    // ==========================================
+    // KHU VỰC PHÂN QUYỀN (ROLE)
+    // ==========================================
+
+    @Enumerated(EnumType.STRING)
+    @Schema(description = "Quyền hạn của tài khoản", example = "USER")
+    private Role role = Role.USER; // Mặc định đăng ký là Thường dân
+
+    // Khai báo các loại thẻ (Quyền) ngay trong này
+    public enum Role {
+        USER,  // Thẻ Thường
+        ADMIN  // Thẻ VIP
+    }
 }
