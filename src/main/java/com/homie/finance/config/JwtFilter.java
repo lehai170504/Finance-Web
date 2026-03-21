@@ -19,50 +19,57 @@ import java.io.IOException;
 @Component
 public class JwtFilter extends OncePerRequestFilter {
 
-    @Autowired
-    private JwtUtil jwtUtil;
-
-    @Autowired
-    private BlacklistedTokenRepository blacklistRepository;
-
-    // 1. Kéo "người phiên dịch" vào đây
-    @Autowired
-    private CustomUserDetailsService customUserDetailsService;
+    @Autowired private JwtUtil jwtUtil;
+    @Autowired private BlacklistedTokenRepository blacklistRepository;
+    @Autowired private CustomUserDetailsService customUserDetailsService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
-        String authHeader = request.getHeader("Authorization");
+        final String authHeader = request.getHeader("Authorization");
+        String token = null;
+        String username = null;
 
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
+            token = authHeader.substring(7);
 
-            // THÊM ĐIỀU KIỆN: Thẻ phải chuẩn VÀ KHÔNG nằm trong danh sách đen
+            // 1. Kiểm tra Blacklist trước khi làm bất cứ việc gì tốn tài nguyên
+            if (blacklistRepository.existsByToken(token)) {
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.getWriter().write("Token has been blacklisted. Please login again.");
+                return; // Chặn đứng tại đây
+            }
+
+            try {
+                username = jwtUtil.extractUsername(token);
+            } catch (Exception e) {
+                // Token lỗi định dạng hoặc hết hạn
+                logger.error("Could not extract username from token", e);
+            }
+        }
+
+        // 2. Nếu có username và chưa được xác thực trong phiên này (Context null)
+        if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+
+            // Chỉ Load DB nếu Token còn hạn
             if (jwtUtil.validateToken(token)) {
-
-                if (blacklistRepository.existsByToken(token)) {
-                    // Nếu token nằm trong blacklist, coi như thẻ giả, không cho qua!
-                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Thẻ này đã đăng xuất, vui lòng login lại!");
-                    return;
-                }
-
-                String username = jwtUtil.extractUsername(token);
-
-                // 2. Lấy toàn bộ thông tin User (bao gồm cả Quyền/Role) từ Database
                 UserDetails userDetails = customUserDetailsService.loadUserByUsername(username);
 
-                // 3. Gắn thông tin và "Quyền hạn" vào thẻ đi lại của hệ thống
-                UsernamePasswordAuthenticationToken authToken =
-                        new UsernamePasswordAuthenticationToken(
-                                userDetails,
-                                null,
-                                userDetails.getAuthorities() // <-- ĐIỂM ĂN TIỀN Ở ĐÂY: Truyền danh sách quyền vào!
-                        );
+                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                        userDetails,
+                        null,
+                        userDetails.getAuthorities()
+                );
+
+                // Quan trọng: Gắn thêm chi tiết Request vào Token
+                authToken.setDetails(new org.springframework.security.web.authentication.WebAuthenticationDetailsSource().buildDetails(request));
 
                 SecurityContextHolder.getContext().setAuthentication(authToken);
             }
         }
+
+        // 3. LUÔN LUÔN phải gọi dòng này để request đi tiếp (Trừ khi đã sendError ở trên)
         filterChain.doFilter(request, response);
     }
 }

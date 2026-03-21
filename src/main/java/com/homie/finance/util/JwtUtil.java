@@ -13,17 +13,13 @@ import java.util.function.Function;
 @Component
 public class JwtUtil {
 
-    // Khóa bí mật (Trong thực tế nên để ở application.properties)
     private final String SECRET_KEY = "DayLaMotCaiKhoaBiMatCucKyDaiVaKhoDoanDeBaoMatToiThieu256Bits";
-
-    // Access Token sống 1 ngày (24h)
-    private final long EXPIRATION_TIME = 86400000;
+    private final long EXPIRATION_TIME = 86400000; // 24h
 
     private Key getSigningKey() {
         return Keys.hmacShaKeyFor(SECRET_KEY.getBytes());
     }
 
-    // 1. Tạo Token (In thẻ)
     public String generateToken(String username) {
         return Jwts.builder()
                 .setSubject(username)
@@ -33,40 +29,41 @@ public class JwtUtil {
                 .compact();
     }
 
-    // 2. Trích xuất Username từ Token
     public String extractUsername(String token) {
-        return extractClaim(token, Claims::getSubject);
+        try {
+            return extractClaim(token, Claims::getSubject);
+        } catch (Exception e) {
+            return null; // Trả về null nếu token lỗi, filter sẽ xử lý tiếp
+        }
     }
 
-    // 3. 🎯 HÀM MỚI: Trích xuất ngày hết hạn (Dùng cho logic Logout/Blacklist)
     public Date extractExpiration(String token) {
         return extractClaim(token, Claims::getExpiration);
     }
 
-    // 4. Hàm bổ trợ để trích xuất thông tin bất kỳ (Generic Claim Extractor)
     public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
         final Claims claims = extractAllClaims(token);
-        return claimsResolver.apply(claims);
+        return (claims != null) ? claimsResolver.apply(claims) : null;
     }
 
     private Claims extractAllClaims(String token) {
-        return Jwts.parserBuilder()
-                .setSigningKey(getSigningKey())
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
+        try {
+            return Jwts.parserBuilder()
+                    .setSigningKey(getSigningKey())
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+        } catch (Exception e) {
+            // Log lỗi ở đây để debug nếu cần: Log.error("JWT Error: " + e.getMessage());
+            return null;
+        }
     }
 
-    // 5. Kiểm tra Token còn hạn không
-    private Boolean isTokenExpired(String token) {
-        return extractExpiration(token).before(new Date());
-    }
-
-    // 6. Validate Token (Kiểm tra thẻ thật/giả và còn hạn không)
     public boolean validateToken(String token) {
         try {
-            Jwts.parserBuilder().setSigningKey(getSigningKey()).build().parseClaimsJws(token);
-            return !isTokenExpired(token); // Trả về true nếu đúng chữ ký VÀ còn hạn
+            Claims claims = extractAllClaims(token);
+            if (claims == null) return false;
+            return !claims.getExpiration().before(new Date());
         } catch (Exception e) {
             return false;
         }

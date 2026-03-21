@@ -18,24 +18,33 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableMethodSecurity
 public class SecurityConfig {
 
-    // Kéo ông bảo vệ vào đây
     @Autowired
     private JwtFilter jwtFilter;
 
-    // 1. Máy băm mật khẩu
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    // 2. Thiết lập chốt chặn (Filter Chain)
+    // --- THÊM CẤU HÌNH CORS NÀY ĐỂ ANDROID/SWAGGER KHÔNG BỊ CHẶN ---
+    @Bean
+    public org.springframework.web.cors.CorsConfigurationSource corsConfigurationSource() {
+        org.springframework.web.cors.CorsConfiguration configuration = new org.springframework.web.cors.CorsConfiguration();
+        configuration.setAllowedOrigins(java.util.List.of("*")); // Cho phép tất cả (hoặc điền domain cụ thể)
+        configuration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(java.util.List.of("Authorization", "Content-Type"));
+        org.springframework.web.cors.UrlBasedCorsConfigurationSource source = new org.springframework.web.cors.UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .cors(Customizer.withDefaults())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Sử dụng cấu hình trên
                 .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(session -> session.sessionCreationPolicy(org.springframework.security.config.http.SessionCreationPolicy.STATELESS)) // 👈 Thêm dòng này (Bắt buộc cho JWT)
                 .authorizeHttpRequests(auth -> auth
-                        // Khu vực thả cửa (Đã thêm full bộ Swagger VIP)
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/swagger-ui/**",
@@ -46,18 +55,17 @@ public class SecurityConfig {
                                 "/webjars/**"
                         ).permitAll()
 
-                        // Cửa VIP: Chỉ những người mang thẻ ADMIN mới được bước vào đường link có chữ /admin/
-                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        // Thay đổi từ hasRole sang hasAuthority để tránh lỗi ROLE_ prefix nếu BE homie chưa chuẩn
+                        .requestMatchers("/api/admin/**").hasAuthority("ADMIN")
+                        .requestMatchers("/api/categories/**").authenticated() // Thêm dòng này để test categories
 
-                        // Cửa chung: User hay Admin gì vào cũng được, miễn là có thẻ
                         .anyRequest().authenticated()
                 )
-                // Đặt ông bảo vệ JwtFilter đứng canh NGAY TRƯỚC cửa chính
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
-    // 3. Máy quét vân tay (Dùng để xử lý API Đăng nhập)
+
     @Bean
     public org.springframework.security.authentication.AuthenticationManager authenticationManager(
             org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration authenticationConfiguration) throws Exception {
