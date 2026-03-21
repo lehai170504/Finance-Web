@@ -4,12 +4,15 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.ApplicationContext;
 import io.swagger.v3.oas.annotations.OpenAPIDefinition;
 import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
 import io.swagger.v3.oas.annotations.info.Info;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.security.SecurityScheme;
+import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @OpenAPIDefinition(
 		info = @Info(title = "App Quản Lý Tài Chính của Homie", version = "1.0"),
@@ -22,6 +25,9 @@ import io.swagger.v3.oas.annotations.security.SecurityScheme;
 		bearerFormat = "JWT"
 )
 @SpringBootApplication
+@EnableCaching
+@EnableAsync
+@EnableScheduling
 public class Application {
 	private static final Logger log = LoggerFactory.getLogger(Application.class);
 

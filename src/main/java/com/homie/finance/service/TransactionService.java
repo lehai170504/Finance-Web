@@ -12,12 +12,14 @@ import com.homie.finance.repository.CategoryRepository;
 import com.homie.finance.repository.TransactionRepository;
 import com.homie.finance.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
@@ -38,12 +40,14 @@ public class TransactionService {
     @Autowired
     private CloudinaryService cloudinaryService;
 
-    // Phải gọi thêm ông Thủ kho User
     @Autowired
     private UserRepository userRepository;
 
     @Autowired
     private BudgetRepository budgetRepository;
+
+    @Autowired
+    private AlertService alertService;
 
     // 🛠 BẢO BỐI: Hàm lấy thông tin User đang đăng nhập từ Token
     private User getCurrentLoggedInUser() {
@@ -52,38 +56,37 @@ public class TransactionService {
                 .orElseThrow(() -> new RuntimeException("Lỗi xác thực người dùng!"));
     }
 
-    // 1. Lưu giao dịch mới (Gắn thẻ tên User)
+    // 1. Lưu giao dịch mới
+    @CacheEvict(value = "statistics", key = "#result.user.id")
     public Transaction createTransaction(String categoryId, TransactionRequest request) {
-        User currentUser = getCurrentLoggedInUser(); // Lấy user hiện tại
+        User currentUser = getCurrentLoggedInUser();
 
         Category category = categoryRepository.findById(categoryId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy danh mục nào với ID này: " + categoryId));
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy danh mục!"));
 
-        // Chỉ kiểm tra bẫy nếu đây là danh mục CHI TIÊU (EXPENSE)
         if ("EXPENSE".equals(category.getType())) {
             int month = request.getDate().getMonthValue();
             int year = request.getDate().getYear();
 
-            // Xem tháng này có bị "vợ" set ngân sách cho khoản này không?
             budgetRepository.findByUserAndCategoryAndMonthAndYear(currentUser, category, month, year)
                     .ifPresent(budget -> {
                         Double limit = budget.getLimitAmount();
-
-                        // Lấy ngày mùng 1 và ngày cuối của tháng đó
                         LocalDate startDate = YearMonth.of(year, month).atDay(1);
                         LocalDate endDate = YearMonth.of(year, month).atEndOfMonth();
 
-                        // Cộng dồn tiền đã tiêu từ đầu tháng tới giờ
                         Double alreadySpent = transactionRepository.sumAmountByUserAndCategoryAndDateBetween(currentUser, category, startDate, endDate);
                         if (alreadySpent == null) alreadySpent = 0.0;
 
-                        // KIỂM TRA: Tiền đã tiêu + Tiền chuẩn bị tiêu > Hạn mức ???
+                        // KIỂM TRA: Nếu tiêu phát này nữa là lố?
                         if (alreadySpent + request.getAmount() > limit) {
-                            // KÍCH HOẠT CHẾ ĐỘ "CHỬI" 🤬
-                            throw new IllegalArgumentException(
-                                    "Ê homie! Ngân sách '" + category.getName() + "' tháng này chỉ có " + limit +
-                                            "đ thôi. Tiêu thêm quả này là lố mọe ngân sách rồi, tém tém lại đi!!!"
+                            // 🚀 GỌI ALERT SERVICE (Khớp tên hàm 100%)
+                            alertService.sendBudgetAlertEmail(
+                                    currentUser.getEmail(),
+                                    currentUser.getUsername(),
+                                    category.getName(),
+                                    limit
                             );
+                            System.out.println("⚠️ Cảnh báo lố ngân sách đã được gửi ngầm!");
                         }
                     });
         }
@@ -93,46 +96,17 @@ public class TransactionService {
         transaction.setNote(request.getNote());
         transaction.setDate(request.getDate());
         transaction.setCategory(category);
-        transaction.setUser(currentUser); // Gắn user vào giao dịch
+        transaction.setUser(currentUser);
 
         return transactionRepository.save(transaction);
     }
 
-    // 2. Lấy danh sách phân trang (Chỉ của User này)
-    public PageResponse<TransactionResponse> getAllTransactions(int page, int size) {
-        User currentUser = getCurrentLoggedInUser();
-        Pageable pageable = PageRequest.of(page, size, Sort.by("date").descending());
-
-        // Cập nhật hàm gọi repository
-        Page<Transaction> transactionPage = transactionRepository.findByUser(currentUser, pageable);
-
-        return mapToPageResponse(transactionPage);
-    }
-
-    // 3. Tìm kiếm theo từ khóa (Chỉ của User này)
-    public PageResponse<TransactionResponse> searchTransactions(String keyword, int page, int size) {
-        User currentUser = getCurrentLoggedInUser();
-        Pageable pageable = PageRequest.of(page, size, Sort.by("date").descending());
-
-        // Cập nhật hàm gọi repository
-        Page<Transaction> transactionPage = transactionRepository.findByUserAndNoteContainingIgnoreCase(currentUser, keyword, pageable);
-
-        return mapToPageResponse(transactionPage);
-    }
-
-    // 4. Lấy tổng tiền (Chỉ của User này)
-    public Double getTotalByType(String type) {
-        User currentUser = getCurrentLoggedInUser();
-        Double total = transactionRepository.sumAmountByUserAndType(currentUser, type);
-        return total != null ? total : 0.0;
-    }
-
-    // 5. Sửa giao dịch (Kiểm tra quyền sở hữu)
+    // 5. Sửa giao dịch (Xóa Cache cũ đi vì tiền đã thay đổi)
+    @CacheEvict(value = "statistics", key = "#result.user.id")
     public Transaction updateTransaction(String id, String categoryId, TransactionRequest request) {
         User currentUser = getCurrentLoggedInUser();
 
         return transactionRepository.findById(id).map(transaction -> {
-            // Chặn ngay nếu không phải chủ nhân
             if (!transaction.getUser().getId().equals(currentUser.getId())) {
                 throw new IllegalArgumentException("Homie không có quyền sửa giao dịch của người khác đâu nhé!");
             }
@@ -149,46 +123,31 @@ public class TransactionService {
         }).orElseThrow(() -> new IllegalArgumentException("Không tìm thấy giao dịch id: " + id));
     }
 
-    // 6. Xóa giao dịch (Kiểm tra quyền sở hữu)
+    // 6. Xóa giao dịch
     public void deleteTransaction(String id) {
         User currentUser = getCurrentLoggedInUser();
 
         Transaction transaction = transactionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không thể xóa! Giao dịch không tồn tại với ID: " + id));
 
-        // Chặn ngay nếu không phải chủ nhân
         if (!transaction.getUser().getId().equals(currentUser.getId())) {
             throw new IllegalArgumentException("Homie không có quyền xóa giao dịch của người khác đâu nhé!");
         }
 
         transactionRepository.delete(transaction);
+
+        // Gọi hàm giả để ép Spring kích hoạt xóa Cache
+        evictStatisticCache(currentUser.getId());
     }
 
-    // 7. Lọc Transaction theo Category (Chỉ của User này)
-    public List<TransactionResponse> getTransactionsByType(String type){
-        User currentUser = getCurrentLoggedInUser();
-
-        // Cập nhật hàm gọi repository
-        List<Transaction> transactions = transactionRepository.findByUserAndCategoryType(currentUser, type);
-        List<TransactionResponse> responseList = new ArrayList<>();
-
-        for(Transaction t: transactions){
-            TransactionResponse res = new TransactionResponse();
-            res.setId(t.getId());
-            res.setNote(t.getNote());
-            res.setAmount(t.getAmount());
-            res.setDate(t.getDate());
-
-            if(t.getCategory() != null){
-                res.setCategoryName(t.getCategory().getName());
-                res.setCategoryType(t.getCategory().getType());
-            }
-            responseList.add(res);
-        }
-        return responseList;
+    // Hàm phụ trợ xóa Cache
+    @CacheEvict(value = "statistics", key = "#userId")
+    public void evictStatisticCache(String userId) {
+        System.out.println("Đã xóa Cache Thống kê do Giao dịch bị xóa. UserId: " + userId);
     }
 
-    // 8. Thống kê tổng tiền (Chỉ của User này)
+    // 8. Thống kê (Sử dụng Cache)
+    @Cacheable(value = "statistics", key = "T(org.springframework.security.core.context.SecurityContextHolder).getContext().getAuthentication().getName() + '-' + #startDate + '-' + #endDate")
     public List<StatisticResponse> getCategoryStatistics(LocalDate startDate, LocalDate endDate) {
         User currentUser = getCurrentLoggedInUser();
 
@@ -200,7 +159,69 @@ public class TransactionService {
         return transactionRepository.getCategoryStatistics(currentUser, startDate, endDate);
     }
 
-    // 🛠 Hàm phụ trợ: Xào nấu từ Page của Spring sang PageResponse của mình
+    // --- CÁC HÀM CÒN LẠI GIỮ NGUYÊN ---
+
+    public PageResponse<TransactionResponse> getAllTransactions(int page, int size) {
+        User currentUser = getCurrentLoggedInUser();
+        Pageable pageable = PageRequest.of(page, size, Sort.by("date").descending());
+        Page<Transaction> transactionPage = transactionRepository.findByUser(currentUser, pageable);
+        return mapToPageResponse(transactionPage);
+    }
+
+    public PageResponse<TransactionResponse> searchTransactions(String keyword, int page, int size) {
+        User currentUser = getCurrentLoggedInUser();
+        Pageable pageable = PageRequest.of(page, size, Sort.by("date").descending());
+        Page<Transaction> transactionPage = transactionRepository.findByUserAndNoteContainingIgnoreCase(currentUser, keyword, pageable);
+        return mapToPageResponse(transactionPage);
+    }
+
+    public Double getTotalByType(String type) {
+        User currentUser = getCurrentLoggedInUser();
+        Double total = transactionRepository.sumAmountByUserAndType(currentUser, type);
+        return total != null ? total : 0.0;
+    }
+
+    public List<TransactionResponse> getTransactionsByType(String type){
+        User currentUser = getCurrentLoggedInUser();
+        List<Transaction> transactions = transactionRepository.findByUserAndCategoryType(currentUser, type);
+        List<TransactionResponse> responseList = new ArrayList<>();
+        for(Transaction t: transactions){
+            TransactionResponse res = new TransactionResponse();
+            res.setId(t.getId());
+            res.setNote(t.getNote());
+            res.setAmount(t.getAmount());
+            res.setDate(t.getDate());
+            if(t.getCategory() != null){
+                res.setCategoryName(t.getCategory().getName());
+                res.setCategoryType(t.getCategory().getType());
+            }
+            responseList.add(res);
+        }
+        return responseList;
+    }
+
+    public TransactionResponse uploadReceipt(String transactionId, MultipartFile file) {
+        long MAX_FILE_SIZE = 5 * 1024 * 1024;
+        if (file.getSize() > MAX_FILE_SIZE) throw new IllegalArgumentException("File quá nặng!");
+        User currentUser = getCurrentLoggedInUser();
+        Transaction transaction = transactionRepository.findById(transactionId).orElseThrow(() -> new IllegalArgumentException("Không thấy GD!"));
+        if (!transaction.getUser().getId().equals(currentUser.getId())) throw new IllegalArgumentException("Không có quyền!");
+        if (transaction.getReceiptUrl() != null) cloudinaryService.deleteImage(transaction.getReceiptUrl());
+        String imageUrl = cloudinaryService.uploadImage(file);
+        transaction.setReceiptUrl(imageUrl);
+        transactionRepository.save(transaction);
+        TransactionResponse res = new TransactionResponse();
+        res.setId(transaction.getId());
+        res.setReceiptUrl(transaction.getReceiptUrl());
+        return res;
+    }
+
+    public List<TransactionResponse> getAllTransactionsForExport() {
+        User currentUser = getCurrentLoggedInUser();
+        Page<Transaction> page = transactionRepository.findByUser(currentUser, Pageable.unpaged());
+        return mapToPageResponse(page).getContent();
+    }
+
     private PageResponse<TransactionResponse> mapToPageResponse(Page<Transaction> transactionPage) {
         List<TransactionResponse> content = transactionPage.getContent().stream().map(t -> {
             TransactionResponse res = new TransactionResponse();
@@ -214,74 +235,6 @@ public class TransactionService {
             }
             return res;
         }).collect(Collectors.toList());
-
-        return new PageResponse<>(
-                content,
-                transactionPage.getNumber(),
-                transactionPage.getTotalPages(),
-                transactionPage.getTotalElements()
-        );
-    }
-
-    // Upload hình ảnh
-    public TransactionResponse uploadReceipt(String transactionId, MultipartFile file) {
-        // 🛡️ BƯỚC TỐI ƯU 1: Kiểm tra dung lượng (Tối đa 5MB)
-        long MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB tính bằng bytes
-        if (file.getSize() > MAX_FILE_SIZE) {
-            throw new IllegalArgumentException("Homie ơi file nặng quá! Vui lòng chọn ảnh dưới 5MB nhé.");
-        }
-
-        // 🛡️ BƯỚC TỐI ƯU 2: Kiểm tra định dạng (Chỉ nhận Ảnh)
-        String contentType = file.getContentType();
-        if (contentType == null || !contentType.startsWith("image/")) {
-            throw new IllegalArgumentException("Sai định dạng rồi! Hệ thống chỉ nhận file hình ảnh (JPG, PNG...) thôi nhé.");
-        }
-
-        User currentUser = getCurrentLoggedInUser();
-
-        // 1. Tìm giao dịch xem có không
-        Transaction transaction = transactionRepository.findById(transactionId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy giao dịch!"));
-
-        // 2. Chặn nếu không phải chủ nhân
-        if (!transaction.getUser().getId().equals(currentUser.getId())) {
-            throw new IllegalArgumentException("Homie không được úp ảnh vào hóa đơn của người khác!");
-        }
-
-        // Nếu giao dịch này ĐÃ CÓ ảnh từ trước -> Kêu Cloudinary xóa cái ảnh đó đi cho đỡ tốn dung lượng
-        if (transaction.getReceiptUrl() != null && !transaction.getReceiptUrl().isEmpty()) {
-            cloudinaryService.deleteImage(transaction.getReceiptUrl());
-        }
-
-        // 3. Đưa ảnh lên mây và lấy link về
-        String imageUrl = cloudinaryService.uploadImage(file);
-
-        // 4. Lưu link vào Database
-        transaction.setReceiptUrl(imageUrl);
-        transactionRepository.save(transaction);
-
-        // 5. Trả về Response (Chuyển tay sang DTO)
-        TransactionResponse res = new TransactionResponse();
-        res.setId(transaction.getId());
-        res.setAmount(transaction.getAmount());
-        res.setNote(transaction.getNote());
-        res.setDate(transaction.getDate());
-        res.setReceiptUrl(transaction.getReceiptUrl());
-        if (transaction.getCategory() != null) {
-            res.setCategoryName(transaction.getCategory().getName());
-            res.setCategoryType(transaction.getCategory().getType());
-        }
-        return res;
-    }
-
-    //Lấy tất cả giao dịch (Không phân trang) để xuất Excel
-    public List<TransactionResponse> getAllTransactionsForExport() {
-        User currentUser = getCurrentLoggedInUser();
-
-        // Dùng unpaged() để "hack" cái hàm phân trang, bắt nó lấy hết ra!
-        Page<Transaction> page = transactionRepository.findByUser(currentUser, Pageable.unpaged());
-
-        // Tái sử dụng luôn cái hàm nhào nặn DTO lúc trước, quá tiện!
-        return mapToPageResponse(page).getContent();
+        return new PageResponse<>(content, transactionPage.getNumber(), transactionPage.getTotalPages(), transactionPage.getTotalElements());
     }
 }

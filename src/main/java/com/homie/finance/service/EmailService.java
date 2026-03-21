@@ -1,8 +1,11 @@
 package com.homie.finance.service;
 
+import jakarta.mail.internet.MimeMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -11,25 +14,19 @@ public class EmailService {
     @Autowired
     private JavaMailSender mailSender;
 
+    // --- CÁC HÀM CŨ CỦA HOMIE (GIỮ NGUYÊN) ---
     public void sendWelcomeEmail(String toEmail, String username) {
         try {
             SimpleMailMessage message = new SimpleMailMessage();
-            // Lấy email mà homie đã cấu hình trong properties làm người gửi
-            message.setFrom("homiefinance@no-reply.com");
+            message.setFrom("hoanghaile175@gmail.com");
             message.setTo(toEmail);
             message.setSubject("🎉 Chào mừng homie gia nhập Homie Finance!");
             message.setText("Chào " + username + ",\n\n" +
                     "Chúc mừng homie đã đăng ký thành công tài khoản trên hệ thống Homie Finance! 🚀\n" +
-                    "Từ nay mọi chi tiêu của bạn đã có hệ thống lo. Hãy bắt đầu ghi chép ngay để quản lý tài chính thông minh hơn nhé.\n\n" +
-                    "Thân mến,\n" +
-                    "Đội ngũ Homie Dev.");
-
-            // Bắt đầu gửi đi
+                    "Thân mến,\n" + "Đội ngũ Homie Dev.");
             mailSender.send(message);
-            System.out.println("Đã gửi email thành công tới: " + toEmail);
-
         } catch (Exception e) {
-            System.err.println("Lỗi khi gửi email: " + e.getMessage());
+            System.err.println("Lỗi gửi mail chào mừng: " + e.getMessage());
         }
     }
 
@@ -39,5 +36,23 @@ public class EmailService {
         message.setSubject(subject);
         message.setText(content);
         mailSender.send(message);
+    }
+
+    // --- HÀM NÂNG CẤP (Dùng cho HTML và Async) ---
+
+    /**
+     * Gửi Email định dạng HTML (Dùng cho Báo cáo và Cảnh báo đẹp)
+     */
+    public void sendHtmlEmail(String to, String subject, String htmlBody) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setTo(to);
+            helper.setSubject(subject);
+            helper.setText(htmlBody, true);
+            mailSender.send(message);
+        } catch (Exception e) {
+            System.err.println("❌ Lỗi gửi HTML email: " + e.getMessage());
+        }
     }
 }

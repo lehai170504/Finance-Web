@@ -1,6 +1,7 @@
 package com.homie.finance.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.io.Serializable;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -8,7 +9,7 @@ import lombok.NoArgsConstructor;
 @Data
 @AllArgsConstructor // Bắt buộc phải có cái này để Spring ngầm định gắp dữ liệu bỏ vào
 @NoArgsConstructor
-public class StatisticResponse {
+public class StatisticResponse implements Serializable {
 
     @Schema(description = "Tên danh mục", example = "Ăn uống")
     private String categoryName;
