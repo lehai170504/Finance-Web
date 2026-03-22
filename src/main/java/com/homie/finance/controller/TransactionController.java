@@ -67,13 +67,25 @@ public class TransactionController {
 
     // --- NHÓM 3: THÊM / SỬA / XÓA ---
 
-    @PostMapping
-    @Operation(summary = "Thêm giao dịch mới", description = "Ghi chép một khoản thu/chi. Hệ thống sẽ tự trừ/cộng tiền trong Ví và check ngân sách (Budget).")
+    @PostMapping("/create")
+    @Operation(
+            summary = "Thêm giao dịch mới",
+            description = "Ghi chép một khoản thu/chi. Hệ thống tự cập nhật số dư Ví, check Budget và gắn vào Nhóm (nếu có)."
+    )
     public ApiResponse<Transaction> createTransaction(
-            @Parameter(description = "ID của Ví (Wallet)") @RequestParam String walletId, // 💡 MỚI THÊM
-            @Parameter(description = "ID của Danh mục (Category)") @RequestParam String categoryId,
+            @Parameter(description = "ID của Ví (Wallet)")
+            @RequestParam String walletId,
+
+            @Parameter(description = "ID của Danh mục (Category)")
+            @RequestParam String categoryId,
+
+            @Parameter(description = "ID của Nhóm (GroupSpace) - Để trống nếu là giao dịch cá nhân")
+            @RequestParam(required = false) String groupId, // 💡 MỚI THÊM (Optional)
+
             @Valid @RequestBody TransactionRequest request) {
-        Transaction newData = transactionService.createTransaction(walletId, categoryId, request);
+
+        Transaction newData = transactionService.createTransaction(walletId, categoryId, groupId, request);
+
         return new ApiResponse<>(201, "Đã ghi chép giao dịch mới!", newData);
     }
 

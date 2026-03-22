@@ -46,39 +46,36 @@ public class TransactionService {
                 .orElseThrow(() -> new RuntimeException("Lỗi xác thực người dùng!"));
     }
 
-    // 1. Lưu giao dịch mới (CÓ XỬ LÝ VÍ & NHÓM)
     @Transactional
     @CacheEvict(value = "statistics", key = "#result.user.id")
-    public Transaction createTransaction(String walletId, String categoryId, TransactionRequest request) {
+    public Transaction createTransaction(String walletId, String categoryId, String groupId, TransactionRequest request) {
         User currentUser = getCurrentLoggedInUser();
 
+        // 1. Check Danh mục
         Category category = categoryRepository.findById(categoryId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy danh mục!"));
 
+        // 2. Check Ví
         Wallet wallet = walletRepository.findById(walletId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy ví!"));
 
-        // Check ví có phải của người dùng này không
         if (!wallet.getUser().getId().equals(currentUser.getId())) {
             throw new IllegalArgumentException("Ví này không thuộc về bạn!");
         }
 
-        // TÍNH TOÁN SỐ DƯ VÍ
+        // 3. TÍNH TOÁN SỐ DƯ VÍ (Giữ nguyên logic cũ của homie)
         if ("EXPENSE".equals(category.getType())) {
             if (wallet.getBalance() < request.getAmount()) {
-                throw new IllegalArgumentException("Số dư trong ví " + wallet.getName() + " không đủ để chi tiêu!");
+                throw new IllegalArgumentException("Số dư trong ví " + wallet.getName() + " không đủ!");
             }
-            wallet.setBalance(wallet.getBalance() - request.getAmount()); // Trừ tiền ví
-
-            // Xử lý cảnh báo Budget
+            wallet.setBalance(wallet.getBalance() - request.getAmount());
             checkBudgetAndAlert(currentUser, category, request);
-
         } else if ("INCOME".equals(category.getType())) {
-            wallet.setBalance(wallet.getBalance() + request.getAmount()); // Cộng tiền ví
+            wallet.setBalance(wallet.getBalance() + request.getAmount());
         }
-        walletRepository.save(wallet); // Lưu lại số dư mới
+        walletRepository.save(wallet);
 
-        // Lưu Giao dịch
+        // 4. Khởi tạo Giao dịch
         Transaction transaction = new Transaction();
         transaction.setAmount(request.getAmount());
         transaction.setNote(request.getNote());
@@ -87,13 +84,15 @@ public class TransactionService {
         transaction.setWallet(wallet);
         transaction.setUser(currentUser);
 
-        // 💡 LOGIC MỚI: Nếu có truyền groupId xuống -> Gắn giao dịch này vào Nhóm
-        if (request.getGroupId() != null && !request.getGroupId().isEmpty()) {
-            GroupSpace group = groupSpaceRepository.findById(request.getGroupId())
+        if (groupId != null && !groupId.isEmpty()) {
+            GroupSpace group = groupSpaceRepository.findById(groupId)
                     .orElseThrow(() -> new IllegalArgumentException("Nhóm không tồn tại!"));
 
-            // BẢO MẬT: Phải là thành viên mới được thêm giao dịch vào nhóm
-            if (!group.getMembers().contains(currentUser)) {
+            // Kiểm tra quyền thành viên
+            boolean isMember = group.getMembers().stream()
+                    .anyMatch(m -> m.getId().equals(currentUser.getId()));
+
+            if (!isMember) {
                 throw new IllegalArgumentException("Homie không phải thành viên của nhóm này!");
             }
             transaction.setGroupSpace(group);

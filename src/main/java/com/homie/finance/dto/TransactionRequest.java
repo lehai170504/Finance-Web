@@ -19,5 +19,4 @@ public class TransactionRequest {
     @NotNull(message = "Ngày tháng không được bỏ trống!")
     @Schema(description = "Ngày thực hiện giao dịch", example = "2026-03-18")
     private LocalDate date;
-    private String groupId;
 }
