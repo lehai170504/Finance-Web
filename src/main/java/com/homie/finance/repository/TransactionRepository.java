@@ -63,7 +63,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, String
 
     // --- NHÓM 3: CÁC HÀM XỬ LÝ KHÔNG GIAN NHÓM (GROUP SPACE) ---
 
-    // 8. 💡 MỚI: Lấy tất cả giao dịch thuộc về một Nhóm cụ thể (Dùng phân trang)
+    // 8. Lấy tất cả giao dịch thuộc về một Nhóm cụ thể (Dùng phân trang)
     Page<Transaction> findByGroupSpaceId(String groupSpaceId, Pageable pageable);
+
+    List<Transaction> findAllByGroupSpaceId(String groupSpaceId);
 
 }

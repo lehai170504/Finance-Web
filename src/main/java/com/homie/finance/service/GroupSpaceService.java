@@ -137,4 +137,6 @@ public class GroupSpaceService {
         group.getMembers().remove(me);
         groupSpaceRepository.save(group);
     }
+
+
 }
