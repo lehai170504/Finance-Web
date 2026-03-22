@@ -16,10 +16,15 @@ public class Category {
     private String id;
 
     @NotBlank(message = "Tên danh mục không được để trống đâu homie!")
-    @Schema(description = "Tên của danh mục", example = "Lương tháng 10")
+    @Schema(description = "Tên của danh mục", example = "Ăn uống")
     private String name;
 
     @NotBlank(message = "Loại danh mục (INCOME/EXPENSE) là bắt buộc!")
-    @Schema(description = "Phân loại thu hoặc chi", example = "INCOME")
+    @Schema(description = "Phân loại: INCOME (Thu) hoặc EXPENSE (Chi)", example = "EXPENSE")
     private String type;
+
+    // 💡 MỚI: Thêm trường icon để lưu tên icon hiển thị trên Android
+    @NotBlank(message = "Chọn một cái icon cho chất nhé homie!")
+    @Schema(description = "Tên định danh của Icon", example = "ic_fastfood")
+    private String icon;
 }

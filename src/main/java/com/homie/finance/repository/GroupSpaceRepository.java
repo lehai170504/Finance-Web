@@ -12,4 +12,9 @@ public interface GroupSpaceRepository extends JpaRepository<GroupSpace, String> 
 
     // Tìm nhóm bằng mã mời
     Optional<GroupSpace> findByInviteCode(String inviteCode);
+
+    boolean existsByNameAndOwner(String name, User owner);
+
+    // Check xem một User có thuộc Group này không (trả về boolean)
+    boolean existsByIdAndMembersContaining(String groupId, User user);
 }

@@ -1,34 +1,42 @@
 package com.homie.finance.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.Data;
-import java.util.ArrayList;
-import java.util.List;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
+
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "group_spaces")
 @Data
+// 💡 THÊM: Tránh lỗi vòng lặp vô hạn khi dùng Lombok với quan hệ ManyToMany
+@EqualsAndHashCode(exclude = {"members", "owner"})
+@ToString(exclude = {"members", "owner"})
 public class GroupSpace {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
     @Column(nullable = false)
-    private String name; // Tên nhóm: VD "Du lịch Đà Lạt"
+    private String name;
 
     @Column(nullable = false, unique = true)
-    private String inviteCode; // Mã code 6 ký tự để mời người khác
+    private String inviteCode;
 
     @ManyToOne
     @JoinColumn(name = "owner_id", nullable = false)
-    private User owner; // Người tạo ra nhóm này
+    @JsonIgnoreProperties({"groups", "password", "otp", "otpExpiry", "role"})
+    private User owner;
 
-    // Quan hệ Nhiều-Nhiều: Một nhóm có nhiều thành viên, 1 user có thể tham gia nhiều nhóm
     @ManyToMany
     @JoinTable(
             name = "group_members",
             joinColumns = @JoinColumn(name = "group_id"),
             inverseJoinColumns = @JoinColumn(name = "user_id")
     )
-    private List<User> members = new ArrayList<>();
+    @JsonIgnoreProperties({"groups", "password", "otp", "otpExpiry", "role"})
+    private Set<User> members = new HashSet<>();
 }

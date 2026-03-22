@@ -13,23 +13,36 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/categories")
-@Tag(name = "3. Category", description = "Quản lý các Nhóm / Phân loại tiền tệ (Ăn uống, Lương, Xăng xe...)")
+@Tag(name = "3. Category", description = "Quản lý các Nhóm / Phân loại tiền tệ")
 public class CategoryController {
 
     @Autowired
     private CategoryService categoryService;
 
     @GetMapping
-    @Operation(summary = "Lấy danh sách danh mục", description = "Load tất cả các danh mục có trong hệ thống để người dùng chọn khi tạo giao dịch.")
+    @Operation(summary = "Lấy danh sách danh mục")
     public ApiResponse<List<Category>> getAllCategories() {
-        List<Category> data = categoryService.getAllCategories();
-        return new ApiResponse<>(200, "Lấy danh sách thành công!", data);
+        return new ApiResponse<>(200, "Lấy danh sách thành công!", categoryService.getAllCategories());
     }
 
     @PostMapping
-    @Operation(summary = "Tạo danh mục mới", description = "Tạo một phân loại mới. Chú ý: Cần gán đúng Type là INCOME (Thu nhập) hoặc EXPENSE (Chi tiêu).")
+    @Operation(summary = "Tạo danh mục mới")
     public ApiResponse<Category> createCategory(@Valid @RequestBody Category category) {
-        Category newData = categoryService.createCategory(category);
-        return new ApiResponse<>(201, "Tạo danh mục mới thành công!", newData);
+        return new ApiResponse<>(201, "Tạo danh mục mới thành công!", categoryService.createCategory(category));
+    }
+
+    // 💡 MỚI: Cập nhật danh mục (Đổi tên, loại hoặc icon)
+    @PutMapping("/{id}")
+    @Operation(summary = "Cập nhật danh mục")
+    public ApiResponse<Category> updateCategory(@PathVariable String id, @Valid @RequestBody Category category) {
+        return new ApiResponse<>(200, "Cập nhật danh mục thành công!", categoryService.updateCategory(id, category));
+    }
+
+    // 💡 MỚI: Xóa danh mục
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Xóa danh mục")
+    public ApiResponse<String> deleteCategory(@PathVariable String id) {
+        categoryService.deleteCategory(id);
+        return new ApiResponse<>(200, "Xóa danh mục thành công!", null);
     }
 }

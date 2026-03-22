@@ -13,4 +13,7 @@ public interface WalletRepository extends JpaRepository<Wallet, String> {
 
     @Query("SELECT SUM(w.balance) FROM Wallet w WHERE w.user = :user")
     Double sumBalanceByUser(@Param("user") User user);
+
+    // 💡 CÁCH 2: Check xem ví có thuộc về User này không trực tiếp dưới DB
+    boolean existsByIdAndUser(String id, User user);
 }

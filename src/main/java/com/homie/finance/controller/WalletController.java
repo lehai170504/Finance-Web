@@ -1,6 +1,7 @@
 package com.homie.finance.controller;
 
 import com.homie.finance.dto.ApiResponse;
+import com.homie.finance.dto.WalletRequest;
 import com.homie.finance.entity.Wallet;
 import com.homie.finance.service.WalletService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,22 +26,36 @@ public class WalletController {
     }
 
     @PostMapping
-    @Operation(summary = "Tạo Ví mới", description = "Thêm một nguồn tiền mới (Ví dụ: Momo, Tiền mặt). FE chỉ cần gửi name, balance, color.")
-    public ApiResponse<Wallet> create(@RequestBody Wallet wallet) {
+    @Operation(summary = "Tạo Ví mới", description = "FE gửi name, balance, color. User tự động gán từ Token.")
+    public ApiResponse<Wallet> create(@RequestBody WalletRequest wallet) {
         return new ApiResponse<>(201, "Đã tạo ví mới", walletService.createWallet(wallet));
     }
 
+    // Cập nhật thông tin ví
+    @PutMapping("/{id}")
+    @Operation(summary = "Cập nhật ví", description = "Đổi tên, màu hoặc điều chỉnh số dư ví.")
+    public ApiResponse<Wallet> update(@PathVariable String id, @RequestBody WalletRequest walletRequest) {
+        return new ApiResponse<>(200, "Đã cập nhật ví", walletService.updateWallet(id, walletRequest));
+    }
+
+    // Xóa ví (Service đã check số dư = 0 mới cho xóa)
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Xóa ví", description = "Xóa ví khỏi hệ thống. Chỉ cho phép xóa khi số dư bằng 0.")
+    public ApiResponse<String> delete(@PathVariable String id) {
+        walletService.deleteWallet(id);
+        return new ApiResponse<>(200, "Đ đã xóa ví thành công", null);
+    }
+
     @PostMapping("/transfer")
-    @Operation(summary = "Chuyển tiền giữa các Ví", description = "Dịch chuyển số dư từ ví A sang ví B.")
+    @Operation(summary = "Chuyển tiền giữa các Ví", description = "Dịch chuyển số dư từ ví A sang ví B (Nội bộ User).")
     public ApiResponse<String> transfer(@RequestParam String fromId, @RequestParam String toId, @RequestParam Double amount) {
         walletService.transferMoney(fromId, toId, amount);
         return new ApiResponse<>(200, "Chuyển tiền thành công!", null);
     }
 
     @GetMapping("/total-balance")
-    @Operation(summary = "Lấy Tổng số dư hiện tại", description = "Cộng dồn tất cả tiền trong các ví của User.")
+    @Operation(summary = "Lấy Tổng số dư hiện tại")
     public ApiResponse<Double> getTotalBalance() {
-        Double total = walletService.getTotalBalance();
-        return new ApiResponse<>(200, "Tổng số dư thực tế", total);
+        return new ApiResponse<>(200, "Tổng số dư thực tế", walletService.getTotalBalance());
     }
 }

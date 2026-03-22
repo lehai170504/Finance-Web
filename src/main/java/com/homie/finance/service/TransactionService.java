@@ -216,15 +216,12 @@ public class TransactionService {
         return mapToPageResponse(transactionRepository.findByUserAndNoteContainingIgnoreCase(currentUser, keyword, pageable));
     }
 
-    // 💡 HÀM MỚI: Lấy danh sách giao dịch của Không gian nhóm
+    // Lấy danh sách giao dịch của Không gian nhóm
     public PageResponse<TransactionResponse> getGroupTransactions(String groupId, int page, int size) {
         User currentUser = getCurrentLoggedInUser();
 
-        GroupSpace group = groupSpaceRepository.findById(groupId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy không gian nhóm!"));
-
-        // BẢO MẬT: Chỉ thành viên mới được xem
-        if (!group.getMembers().contains(currentUser)) {
+        // 💡 Dùng hàm này sẽ KHÔNG bao giờ bị lỗi Lazy Load
+        if (!groupSpaceRepository.existsByIdAndMembersContaining(groupId, currentUser)) {
             throw new IllegalArgumentException("Homie không có quyền xem giao dịch của nhóm này!");
         }
 
