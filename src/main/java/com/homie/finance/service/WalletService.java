@@ -6,6 +6,7 @@ import com.homie.finance.repository.UserRepository;
 import com.homie.finance.repository.WalletRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -14,24 +15,48 @@ import java.util.List;
 public class WalletService {
     @Autowired
     private WalletRepository walletRepository;
-    @Autowired private UserRepository userRepository;
+    @Autowired
+    private UserRepository userRepository;
 
-    public Wallet createWallet(Wallet wallet, String username) {
-        User user = userRepository.findByUsername(username).orElseThrow();
-        wallet.setUser(user);
-        return walletRepository.save(wallet);
+    // 💡 BẢO BỐI: Tự động lấy User đang đăng nhập từ Token
+    private User getCurrentLoggedInUser() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("Lỗi xác thực người dùng!"));
     }
 
-    public List<Wallet> getMyWallets(String username) {
-        User user = userRepository.findByUsername(username).orElseThrow();
-        return walletRepository.findByUser(user);
+    // 1. TẠO VÍ (Chỉ nhận Tên, Số dư, Màu)
+    public Wallet createWallet(Wallet requestWallet) {
+        User currentUser = getCurrentLoggedInUser();
+
+        Wallet newWallet = new Wallet();
+        // ID sẽ do Spring Boot và Database tự động sinh ra (UUID)
+        newWallet.setName(requestWallet.getName());
+        newWallet.setBalance(requestWallet.getBalance() != null ? requestWallet.getBalance() : 0.0);
+        newWallet.setColor(requestWallet.getColor());
+
+        newWallet.setUser(currentUser);
+
+        return walletRepository.save(newWallet);
     }
 
-    // Logic Chuyển tiền giữa 2 ví (Transfer)
+    // 2. LẤY DANH SÁCH VÍ CỦA TÔI
+    public List<Wallet> getMyWallets() {
+        return walletRepository.findByUser(getCurrentLoggedInUser());
+    }
+
+    // 3. CHUYỂN TIỀN
     @Transactional
     public void transferMoney(String fromId, String toId, Double amount) {
-        Wallet fromWallet = walletRepository.findById(fromId).orElseThrow();
-        Wallet toWallet = walletRepository.findById(toId).orElseThrow();
+        User currentUser = getCurrentLoggedInUser();
+
+        Wallet fromWallet = walletRepository.findById(fromId).orElseThrow(() -> new IllegalArgumentException("Không tìm thấy ví nguồn"));
+        Wallet toWallet = walletRepository.findById(toId).orElseThrow(() -> new IllegalArgumentException("Không tìm thấy ví đích"));
+
+        // Bảo mật: Ví rút tiền ra BẮT BUỘC phải là ví của người đang đăng nhập
+        if (!fromWallet.getUser().getId().equals(currentUser.getId())) {
+            throw new IllegalArgumentException("Homie không thể rút tiền từ ví của người khác!");
+        }
 
         if (fromWallet.getBalance() < amount) {
             throw new IllegalArgumentException("Số dư ví nguồn không đủ!");
@@ -44,9 +69,9 @@ public class WalletService {
         walletRepository.save(toWallet);
     }
 
-    public Double getTotalBalance(String username) {
-        User user = userRepository.findByUsername(username).orElseThrow(() -> new RuntimeException("Lỗi xác thực"));
-        Double total = walletRepository.sumBalanceByUser(user);
+    // 4. TÍNH TỔNG SỐ DƯ
+    public Double getTotalBalance() {
+        Double total = walletRepository.sumBalanceByUser(getCurrentLoggedInUser());
         return total != null ? total : 0.0;
     }
 }

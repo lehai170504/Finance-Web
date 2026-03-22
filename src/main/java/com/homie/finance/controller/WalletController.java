@@ -6,7 +6,6 @@ import com.homie.finance.service.WalletService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,15 +21,13 @@ public class WalletController {
     @GetMapping
     @Operation(summary = "Lấy danh sách Ví", description = "Load tất cả các ví của user đang đăng nhập.")
     public ApiResponse<List<Wallet>> getWallets() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return new ApiResponse<>(200, "Danh sách ví", walletService.getMyWallets(username));
+        return new ApiResponse<>(200, "Danh sách ví", walletService.getMyWallets());
     }
 
     @PostMapping
-    @Operation(summary = "Tạo Ví mới", description = "Thêm một nguồn tiền mới (Ví dụ: Momo, Tiền mặt).")
+    @Operation(summary = "Tạo Ví mới", description = "Thêm một nguồn tiền mới (Ví dụ: Momo, Tiền mặt). FE chỉ cần gửi name, balance, color.")
     public ApiResponse<Wallet> create(@RequestBody Wallet wallet) {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return new ApiResponse<>(201, "Đã tạo ví mới", walletService.createWallet(wallet, username));
+        return new ApiResponse<>(201, "Đã tạo ví mới", walletService.createWallet(wallet));
     }
 
     @PostMapping("/transfer")
@@ -43,9 +40,7 @@ public class WalletController {
     @GetMapping("/total-balance")
     @Operation(summary = "Lấy Tổng số dư hiện tại", description = "Cộng dồn tất cả tiền trong các ví của User.")
     public ApiResponse<Double> getTotalBalance() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        // Gọi thẳng Service cho sạch sẽ, không gọi Repository ở Controller
-        Double total = walletService.getTotalBalance(username);
+        Double total = walletService.getTotalBalance();
         return new ApiResponse<>(200, "Tổng số dư thực tế", total);
     }
 }
