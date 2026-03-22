@@ -33,7 +33,6 @@ public class Transaction {
     @JoinColumn(name = "category_id")
     @Schema(description = "Thông tin danh mục chứa giao dịch này")
     private Category category;
-    // THÊM ĐOẠN NÀY VÀO NÈ HOMIE 👇
 
     @ManyToOne
     @JoinColumn(name = "user_id")
@@ -42,4 +41,12 @@ public class Transaction {
 
     @Schema(description = "Đường dẫn ảnh hóa đơn đính kèm")
     private String receiptUrl;
+
+    @ManyToOne
+    @JoinColumn(name = "wallet_id")
+    private Wallet wallet;
+
+    @ManyToOne
+    @JoinColumn(name = "group_space_id")
+    private GroupSpace groupSpace;
 }

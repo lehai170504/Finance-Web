@@ -14,4 +14,5 @@ public class TransactionResponse implements Serializable {
     private String categoryName;
     private String categoryType;
     private String receiptUrl;
+    private String walletName;
 }

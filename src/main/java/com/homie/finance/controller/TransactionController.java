@@ -68,30 +68,32 @@ public class TransactionController {
     // --- NHÓM 3: THÊM / SỬA / XÓA ---
 
     @PostMapping
-    @Operation(summary = "Thêm giao dịch mới", description = "Ghi chép một khoản thu/chi. Hệ thống sẽ tự check ngân sách (Budget) nếu là khoản chi tiêu.")
+    @Operation(summary = "Thêm giao dịch mới", description = "Ghi chép một khoản thu/chi. Hệ thống sẽ tự trừ/cộng tiền trong Ví và check ngân sách (Budget).")
     public ApiResponse<Transaction> createTransaction(
+            @Parameter(description = "ID của Ví (Wallet)") @RequestParam String walletId, // 💡 MỚI THÊM
             @Parameter(description = "ID của Danh mục (Category)") @RequestParam String categoryId,
             @Valid @RequestBody TransactionRequest request) {
-        Transaction newData = transactionService.createTransaction(categoryId, request);
+        Transaction newData = transactionService.createTransaction(walletId, categoryId, request);
         return new ApiResponse<>(201, "Đã ghi chép giao dịch mới!", newData);
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "Sửa giao dịch", description = "Cập nhật lại thông tin (số tiền, ghi chú, ngày tháng) hoặc đổi sang danh mục khác.")
+    @Operation(summary = "Sửa giao dịch", description = "Cập nhật lại thông tin (số tiền, ghi chú, ngày tháng) hoặc đổi sang ví/danh mục khác.")
     public ApiResponse<Transaction> updateTransaction(
             @Parameter(description = "ID của giao dịch cần sửa") @PathVariable String id,
+            @Parameter(description = "ID Ví (Wallet) mới") @RequestParam String newWalletId, // 💡 MỚI THÊM
             @Parameter(description = "ID Danh mục (Category) mới") @RequestParam String categoryId,
             @Valid @RequestBody TransactionRequest request) {
-        Transaction updatedData = transactionService.updateTransaction(id, categoryId, request);
+        Transaction updatedData = transactionService.updateTransaction(id, newWalletId, categoryId, request);
         return new ApiResponse<>(200, "Cập nhật thành công!", updatedData);
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "Xóa giao dịch", description = "Xóa vĩnh viễn giao dịch (và ảnh hóa đơn kèm theo nếu có).")
+    @Operation(summary = "Xóa giao dịch", description = "Xóa vĩnh viễn giao dịch và TỰ ĐỘNG hoàn tiền lại cho Ví.")
     public ApiResponse<String> deleteTransaction(
             @Parameter(description = "ID của giao dịch") @PathVariable String id) {
         transactionService.deleteTransaction(id);
-        return new ApiResponse<>(200, "Đã xóa khỏi sổ!", "ID: " + id);
+        return new ApiResponse<>(200, "Đã xóa khỏi sổ và hoàn tiền về ví!", "ID: " + id);
     }
 
     // --- NHÓM 4: MEDIA (UPLOAD) ---
@@ -103,5 +105,16 @@ public class TransactionController {
             @Parameter(description = "File ảnh hóa đơn") @RequestPart("file") MultipartFile file) {
         TransactionResponse updatedData = transactionService.uploadReceipt(id, file);
         return new ApiResponse<>(200, "Tải ảnh lên mây thành công!", updatedData);
+    }
+
+    @GetMapping("/group/{groupId}")
+    @Operation(summary = "Lấy giao dịch của Nhóm", description = "Chỉ thành viên trong nhóm mới được phép xem.")
+    public ApiResponse<PageResponse<TransactionResponse>> getGroupTransactions(
+            @Parameter(description = "ID của nhóm") @PathVariable String groupId,
+            @Parameter(description = "Số trang (Bắt đầu từ 0)") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Số item mỗi trang") @RequestParam(defaultValue = "10") int size) {
+
+        PageResponse<TransactionResponse> data = transactionService.getGroupTransactions(groupId, page, size);
+        return new ApiResponse<>(200, "Lịch sử chi tiêu của nhóm", data);
     }
 }

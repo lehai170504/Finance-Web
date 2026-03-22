@@ -1,0 +1,38 @@
+package com.homie.finance.controller;
+
+import com.homie.finance.dto.ApiResponse;
+import com.homie.finance.entity.GroupSpace;
+import com.homie.finance.service.GroupSpaceService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/groups")
+@Tag(name = "6. Group Space", description = "Quản lý Không gian chi tiêu nhóm (Ví dụ: Quỹ phòng trọ)")
+public class GroupSpaceController {
+
+    @Autowired
+    private GroupSpaceService groupSpaceService;
+
+    @PostMapping("/create")
+    @Operation(summary = "Tạo Không gian nhóm", description = "Tạo một quỹ chung, hệ thống sẽ trả về Invite Code.")
+    public ApiResponse<GroupSpace> createGroup(@RequestParam String name) {
+        return new ApiResponse<>(201, "Đã tạo nhóm thành công!", groupSpaceService.createGroup(name));
+    }
+
+    @PostMapping("/join")
+    @Operation(summary = "Tham gia nhóm", description = "Nhập mã Invite Code 6 ký tự để vào nhóm.")
+    public ApiResponse<GroupSpace> joinGroup(@RequestParam String inviteCode) {
+        return new ApiResponse<>(200, "Đã tham gia nhóm!", groupSpaceService.joinGroup(inviteCode));
+    }
+
+    @GetMapping("/me")
+    @Operation(summary = "Lấy danh sách nhóm của tôi")
+    public ApiResponse<List<GroupSpace>> getMyGroups() {
+        return new ApiResponse<>(200, "Danh sách không gian chung", groupSpaceService.getMyGroups());
+    }
+}
