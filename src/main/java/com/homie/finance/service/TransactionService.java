@@ -4,8 +4,6 @@ import com.homie.finance.dto.*;
 import com.homie.finance.entity.*;
 import com.homie.finance.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -44,7 +42,6 @@ public class TransactionService {
 
     // --- 1. TẠO GIAO DỊCH ---
     @Transactional
-    @CacheEvict(value = "statistics", key = "#result.user.id")
     public Transaction createTransaction(String walletId, String categoryId, String groupId, TransactionRequest request) {
         User currentUser = getCurrentLoggedInUser();
 
@@ -125,7 +122,6 @@ public class TransactionService {
 
     // --- 2. CẬP NHẬT GIAO DỊCH ---
     @Transactional
-    @CacheEvict(value = "statistics", key = "#result.user.id")
     public Transaction updateTransaction(String id, String newWalletId, String newCategoryId, TransactionRequest request) {
         User currentUser = getCurrentLoggedInUser();
         Transaction oldTx = transactionRepository.findById(id).orElseThrow();
@@ -182,7 +178,6 @@ public class TransactionService {
         }
 
         transactionRepository.delete(transaction);
-        evictStatisticCache(currentUser.getId());
     }
 
     // --- 4. THỐNG KÊ NHÓM ---
@@ -206,7 +201,7 @@ public class TransactionService {
         return new GroupStatsResponse(totalExpense, byCategory, byUser);
     }
 
-    // --- 5. CÁC HÀM TÌM KIẾM, PHÂN TRANG & UPLOAD (GIỮ LẠI CŨ) ---
+    // --- 5. TÌM KIẾM & PHÂN TRANG ---
 
     public PageResponse<TransactionResponse> getAllTransactions(int page, int size) {
         User currentUser = getCurrentLoggedInUser();
@@ -248,9 +243,8 @@ public class TransactionService {
                 .stream().map(this::mapToDto).collect(Collectors.toList());
     }
 
-    // --- 6. HỆ THỐNG CACHE & ALERT ---
+    // --- 6. THỐNG KÊ CHI TIÊU & BUDGET ---
 
-    @Cacheable(value = "statistics", key = "T(org.springframework.security.core.context.SecurityContextHolder).getContext().getAuthentication().getName() + '-' + #startDate + '-' + #endDate")
     public List<StatisticResponse> getCategoryStatistics(LocalDate startDate, LocalDate endDate) {
         User currentUser = getCurrentLoggedInUser();
         if (startDate == null || endDate == null) {
@@ -285,8 +279,7 @@ public class TransactionService {
         return mapToPageResponse(transactionRepository.findByGroupSpaceId(groupId, pageable));
     }
 
-    @CacheEvict(value = "statistics", key = "#userId")
-    public void evictStatisticCache(String userId) { }
+    // --- MAPPING ---
 
     private TransactionResponse mapToDto(Transaction t) {
         TransactionResponse res = new TransactionResponse();
