@@ -49,4 +49,17 @@ public class GroupDetailController {
         return new ApiResponse<>(200, "Danh sách nợ nần hiện tại của nhóm",
                 debtRepository.findByGroupIdAndIsSettledFalse(groupId));
     }
+
+    @PostMapping("/debts/{debtId}/settle")
+    @Operation(
+            summary = "Xác nhận trả nợ (Settle Up)",
+            description = "Chủ nợ xác nhận đã nhận được tiền thực tế từ con nợ. Khoản nợ sẽ được đánh dấu là đã thanh toán."
+    )
+    public ApiResponse<?> settleDebt(
+            @Parameter(description = "ID của khoản nợ", example = "uuid-debt-123")
+            @PathVariable String debtId) {
+
+        transactionService.settleDebt(debtId);
+        return new ApiResponse<>(200, "Tuyệt vời! Đã xác nhận xóa nợ thành công.", null);
+    }
 }

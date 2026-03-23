@@ -20,4 +20,9 @@ public class NotificationService {
                 .collect(Collectors.toList());
         notificationRepository.saveAll(notis);
     }
+
+    public void sendToUser(User user, String message) {
+        Notification noti = new Notification(user, message);
+        notificationRepository.save(noti);
+    }
 }

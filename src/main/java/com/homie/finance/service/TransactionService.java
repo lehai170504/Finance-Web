@@ -302,4 +302,27 @@ public class TransactionService {
         List<TransactionResponse> content = page.getContent().stream().map(this::mapToDto).collect(Collectors.toList());
         return new PageResponse<>(content, page.getNumber(), page.getTotalPages(), page.getTotalElements());
     }
+
+    @Transactional
+    public void settleDebt(String debtId) {
+        User currentUser = getCurrentLoggedInUser();
+
+        // 1. Tìm khoản nợ
+        Debt debt = debtRepository.findById(debtId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy khoản nợ này!"));
+
+        // 2. Bảo mật: Chỉ người cho mượn tiền (Creditor) mới có quyền bấm xác nhận đã nhận tiền
+        if (!debt.getCreditor().getId().equals(currentUser.getId())) {
+            throw new IllegalArgumentException("Chỉ chủ nợ mới có quyền xác nhận thanh toán!");
+        }
+
+        // 3. Cập nhật trạng thái
+        debt.setSettled(true);
+        debtRepository.save(debt);
+
+        // 4. Bắn thông báo báo tin vui cho người nợ
+        String msg = currentUser.getUsername() + " đã xác nhận bạn trả xong khoản nợ " + debt.getAmount() + "đ. Hết nợ nần nhé!";
+        notificationService.sendToUser(debt.getDebtor(), msg);
+    }
+
 }
