@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
@@ -73,6 +74,7 @@ public class TransactionService {
         transaction.setCategory(category);
         transaction.setWallet(wallet);
         transaction.setUser(currentUser);
+        transaction.setDeleted(false); // 💡 Đảm bảo mặc định là chưa xóa
 
         if (groupId != null && !groupId.isEmpty()) {
             GroupSpace group = groupSpaceRepository.findById(groupId)
@@ -126,6 +128,7 @@ public class TransactionService {
         User currentUser = getCurrentLoggedInUser();
         Transaction oldTx = transactionRepository.findById(id).orElseThrow();
         if (!oldTx.getUser().getId().equals(currentUser.getId())) throw new IllegalArgumentException("Không có quyền!");
+        if (oldTx.isDeleted()) throw new IllegalArgumentException("Không thể sửa giao dịch trong thùng rác!");
 
         Wallet oldWallet = oldTx.getWallet();
         Category oldCategory = oldTx.getCategory();
@@ -158,12 +161,17 @@ public class TransactionService {
         return transactionRepository.save(oldTx);
     }
 
-    // --- 3. XÓA GIAO DỊCH ---
+    // =========================================================
+    // 🗑️ --- 3. HỆ THỐNG THÙNG RÁC (SOFT DELETE & RESTORE) ---
+    // =========================================================
+
+    // 3.1 SOFT DELETE (Cho vào thùng rác & Hoàn tiền)
     @Transactional
     public void deleteTransaction(String id) {
         User currentUser = getCurrentLoggedInUser();
         Transaction transaction = transactionRepository.findById(id).orElseThrow();
         if (!transaction.getUser().getId().equals(currentUser.getId())) throw new IllegalArgumentException("Không có quyền!");
+        if (transaction.isDeleted()) throw new IllegalArgumentException("Giao dịch này đã ở trong thùng rác rồi!");
 
         Wallet wallet = transaction.getWallet();
         Category category = transaction.getCategory();
@@ -177,12 +185,66 @@ public class TransactionService {
             walletRepository.save(wallet);
         }
 
+        transaction.setDeleted(true);
+        transaction.setDeletedAt(LocalDateTime.now());
+        transactionRepository.save(transaction);
+    }
+
+    // 3.2 LẤY DANH SÁCH THÙNG RÁC
+    public List<TransactionResponse> getTrash() {
+        User currentUser = getCurrentLoggedInUser();
+        return transactionRepository.findByUserAndIsDeletedTrue(currentUser)
+                .stream().map(this::mapToDto).collect(Collectors.toList());
+    }
+
+    // 3.3 KHÔI PHỤC (Restore & Trừ/Cộng lại tiền)
+    @Transactional
+    public Transaction restoreTransaction(String id) {
+        User currentUser = getCurrentLoggedInUser();
+        Transaction transaction = transactionRepository.findById(id).orElseThrow();
+
+        if (!transaction.getUser().getId().equals(currentUser.getId()) || !transaction.isDeleted()) {
+            throw new IllegalArgumentException("Giao dịch không hợp lệ hoặc không nằm trong thùng rác!");
+        }
+
+        Wallet wallet = transaction.getWallet();
+        Category category = transaction.getCategory();
+        if (wallet != null && category != null) {
+            if ("EXPENSE".equals(category.getType())) {
+                if (wallet.getBalance() < transaction.getAmount()) {
+                    throw new IllegalArgumentException("Số dư ví không đủ để khôi phục khoản chi này!");
+                }
+                wallet.setBalance(wallet.getBalance() - transaction.getAmount());
+            } else if ("INCOME".equals(category.getType())) {
+                wallet.setBalance(wallet.getBalance() + transaction.getAmount());
+            }
+            walletRepository.save(wallet);
+        }
+
+        transaction.setDeleted(false);
+        transaction.setDeletedAt(null);
+        return transactionRepository.save(transaction);
+    }
+
+    // 3.4 XÓA VĨNH VIỄN (Hard Delete)
+    @Transactional
+    public void forceDeleteTransaction(String id) {
+        User currentUser = getCurrentLoggedInUser();
+        Transaction transaction = transactionRepository.findById(id).orElseThrow();
+
+        if (!transaction.getUser().getId().equals(currentUser.getId()) || !transaction.isDeleted()) {
+            throw new IllegalArgumentException("Chỉ được xóa vĩnh viễn giao dịch đang ở trong thùng rác!");
+        }
         transactionRepository.delete(transaction);
     }
 
+    // =========================================================
     // --- 4. THỐNG KÊ NHÓM ---
+    // =========================================================
+
     public GroupStatsResponse getGroupStats(String groupId, int month, int year) {
-        List<Transaction> transactions = transactionRepository.findAllByGroupSpaceId(groupId).stream()
+        // 💡 Đã cập nhật gọi hàm AndIsDeletedFalse
+        List<Transaction> transactions = transactionRepository.findAllByGroupSpaceIdAndIsDeletedFalse(groupId).stream()
                 .filter(t -> t.getDate() != null && t.getDate().getMonthValue() == month && t.getDate().getYear() == year)
                 .collect(Collectors.toList());
 
@@ -201,18 +263,22 @@ public class TransactionService {
         return new GroupStatsResponse(totalExpense, byCategory, byUser);
     }
 
-    // --- 5. TÌM KIẾM & PHÂN TRANG ---
+    // =========================================================
+    // --- 5. TÌM KIẾM & PHÂN TRANG (ĐÃ UPDATE TÊN HÀM) ---
+    // =========================================================
 
     public PageResponse<TransactionResponse> getAllTransactions(int page, int size) {
         User currentUser = getCurrentLoggedInUser();
         Pageable pageable = PageRequest.of(page, size, Sort.by("date").descending());
-        return mapToPageResponse(transactionRepository.findByUser(currentUser, pageable));
+        // 💡 Cập nhật
+        return mapToPageResponse(transactionRepository.findByUserAndIsDeletedFalse(currentUser, pageable));
     }
 
     public PageResponse<TransactionResponse> searchTransactions(String keyword, int page, int size) {
         User currentUser = getCurrentLoggedInUser();
         Pageable pageable = PageRequest.of(page, size, Sort.by("date").descending());
-        return mapToPageResponse(transactionRepository.findByUserAndNoteContainingIgnoreCase(currentUser, keyword, pageable));
+        // 💡 Cập nhật
+        return mapToPageResponse(transactionRepository.findByUserAndNoteContainingIgnoreCaseAndIsDeletedFalse(currentUser, keyword, pageable));
     }
 
     public TransactionResponse uploadReceipt(String transactionId, MultipartFile file) {
@@ -229,7 +295,8 @@ public class TransactionService {
     }
 
     public List<TransactionResponse> getAllTransactionsForExport() {
-        return transactionRepository.findByUser(getCurrentLoggedInUser(), Pageable.unpaged())
+        // 💡 Cập nhật
+        return transactionRepository.findByUserAndIsDeletedFalse(getCurrentLoggedInUser(), Pageable.unpaged())
                 .getContent().stream().map(this::mapToDto).collect(Collectors.toList());
     }
 
@@ -239,11 +306,14 @@ public class TransactionService {
     }
 
     public List<TransactionResponse> getTransactionsByType(String type) {
-        return transactionRepository.findByUserAndCategoryType(getCurrentLoggedInUser(), type)
+        // 💡 Cập nhật
+        return transactionRepository.findByUserAndCategoryTypeAndIsDeletedFalse(getCurrentLoggedInUser(), type)
                 .stream().map(this::mapToDto).collect(Collectors.toList());
     }
 
+    // =========================================================
     // --- 6. THỐNG KÊ CHI TIÊU & BUDGET ---
+    // =========================================================
 
     public List<StatisticResponse> getCategoryStatistics(LocalDate startDate, LocalDate endDate) {
         User currentUser = getCurrentLoggedInUser();
@@ -276,10 +346,34 @@ public class TransactionService {
         User currentUser = getCurrentLoggedInUser();
         if (!groupSpaceRepository.existsByIdAndMembersContaining(groupId, currentUser)) throw new IllegalArgumentException("Không có quyền!");
         Pageable pageable = PageRequest.of(page, size, Sort.by("date").descending());
-        return mapToPageResponse(transactionRepository.findByGroupSpaceId(groupId, pageable));
+        // 💡 Cập nhật
+        return mapToPageResponse(transactionRepository.findByGroupSpaceIdAndIsDeletedFalse(groupId, pageable));
     }
 
+    // =========================================================
+    // --- 7. QUẢN LÝ NỢ (DEBT) ---
+    // =========================================================
+
+    @Transactional
+    public void settleDebt(String debtId) {
+        User currentUser = getCurrentLoggedInUser();
+        Debt debt = debtRepository.findById(debtId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy khoản nợ này!"));
+
+        if (!debt.getCreditor().getId().equals(currentUser.getId())) {
+            throw new IllegalArgumentException("Chỉ chủ nợ mới có quyền xác nhận thanh toán!");
+        }
+
+        debt.setSettled(true);
+        debtRepository.save(debt);
+
+        String msg = currentUser.getUsername() + " đã xác nhận bạn trả xong khoản nợ " + debt.getAmount() + "đ. Hết nợ nần nhé!";
+        notificationService.sendToUser(debt.getDebtor(), msg);
+    }
+
+    // =========================================================
     // --- MAPPING ---
+    // =========================================================
 
     private TransactionResponse mapToDto(Transaction t) {
         TransactionResponse res = new TransactionResponse();
@@ -302,27 +396,4 @@ public class TransactionService {
         List<TransactionResponse> content = page.getContent().stream().map(this::mapToDto).collect(Collectors.toList());
         return new PageResponse<>(content, page.getNumber(), page.getTotalPages(), page.getTotalElements());
     }
-
-    @Transactional
-    public void settleDebt(String debtId) {
-        User currentUser = getCurrentLoggedInUser();
-
-        // 1. Tìm khoản nợ
-        Debt debt = debtRepository.findById(debtId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy khoản nợ này!"));
-
-        // 2. Bảo mật: Chỉ người cho mượn tiền (Creditor) mới có quyền bấm xác nhận đã nhận tiền
-        if (!debt.getCreditor().getId().equals(currentUser.getId())) {
-            throw new IllegalArgumentException("Chỉ chủ nợ mới có quyền xác nhận thanh toán!");
-        }
-
-        // 3. Cập nhật trạng thái
-        debt.setSettled(true);
-        debtRepository.save(debt);
-
-        // 4. Bắn thông báo báo tin vui cho người nợ
-        String msg = currentUser.getUsername() + " đã xác nhận bạn trả xong khoản nợ " + debt.getAmount() + "đ. Hết nợ nần nhé!";
-        notificationService.sendToUser(debt.getDebtor(), msg);
-    }
-
 }

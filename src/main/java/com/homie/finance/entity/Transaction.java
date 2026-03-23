@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "transactions")
@@ -49,4 +50,14 @@ public class Transaction {
     @ManyToOne
     @JoinColumn(name = "group_space_id")
     private GroupSpace groupSpace;
+
+
+    @Column(name = "is_deleted")
+    @Schema(hidden = true)
+    private boolean isDeleted = false;
+
+    @Column(name = "deleted_at")
+    @Schema(hidden = true)
+    private LocalDateTime deletedAt;
+
 }

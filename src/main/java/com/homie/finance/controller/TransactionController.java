@@ -16,7 +16,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/transactions")
-@Tag(name = "2. Transaction", description = "Quản lý luồng tiền ra vào (Thêm, Sửa, Xóa, Tìm kiếm)")
+@Tag(name = "2. Transaction", description = "Quản lý luồng tiền ra vào (Thêm, Sửa, Xóa, Tìm kiếm, Thùng rác)")
 public class TransactionController {
 
     @Autowired
@@ -80,12 +80,11 @@ public class TransactionController {
             @RequestParam String categoryId,
 
             @Parameter(description = "ID của Nhóm (GroupSpace) - Để trống nếu là giao dịch cá nhân")
-            @RequestParam(required = false) String groupId, // 💡 MỚI THÊM (Optional)
+            @RequestParam(required = false) String groupId,
 
             @Valid @RequestBody TransactionRequest request) {
 
         Transaction newData = transactionService.createTransaction(walletId, categoryId, groupId, request);
-
         return new ApiResponse<>(201, "Đã ghi chép giao dịch mới!", newData);
     }
 
@@ -93,22 +92,48 @@ public class TransactionController {
     @Operation(summary = "Sửa giao dịch", description = "Cập nhật lại thông tin (số tiền, ghi chú, ngày tháng) hoặc đổi sang ví/danh mục khác.")
     public ApiResponse<Transaction> updateTransaction(
             @Parameter(description = "ID của giao dịch cần sửa") @PathVariable String id,
-            @Parameter(description = "ID Ví (Wallet) mới") @RequestParam String newWalletId, // 💡 MỚI THÊM
+            @Parameter(description = "ID Ví (Wallet) mới") @RequestParam String newWalletId,
             @Parameter(description = "ID Danh mục (Category) mới") @RequestParam String categoryId,
             @Valid @RequestBody TransactionRequest request) {
         Transaction updatedData = transactionService.updateTransaction(id, newWalletId, categoryId, request);
         return new ApiResponse<>(200, "Cập nhật thành công!", updatedData);
     }
 
+    // 💡 ĐÃ SỬA: Thay đổi nội dung chú thích cho chuẩn với Soft Delete
     @DeleteMapping("/{id}")
-    @Operation(summary = "Xóa giao dịch", description = "Xóa vĩnh viễn giao dịch và TỰ ĐỘNG hoàn tiền lại cho Ví.")
+    @Operation(summary = "Xóa giao dịch (Vào thùng rác)", description = "Chuyển giao dịch vào thùng rác (Soft Delete) và TỰ ĐỘNG hoàn tiền lại cho Ví.")
     public ApiResponse<String> deleteTransaction(
             @Parameter(description = "ID của giao dịch") @PathVariable String id) {
         transactionService.deleteTransaction(id);
-        return new ApiResponse<>(200, "Đã xóa khỏi sổ và hoàn tiền về ví!", "ID: " + id);
+        return new ApiResponse<>(200, "Đã chuyển vào thùng rác và hoàn tiền về ví!", "ID: " + id);
     }
 
-    // --- NHÓM 4: MEDIA (UPLOAD) ---
+    // =========================================================
+    // 🗑️ NHÓM 5: THÙNG RÁC (RECYCLE BIN)
+    // =========================================================
+
+    @GetMapping("/trash")
+    @Operation(summary = "Xem thùng rác", description = "Lấy danh sách các giao dịch đã bị xóa (chưa xóa vĩnh viễn).")
+    public ApiResponse<List<TransactionResponse>> getTrash() {
+        return new ApiResponse<>(200, "Danh sách giao dịch trong thùng rác", transactionService.getTrash());
+    }
+
+    @PutMapping("/{id}/restore")
+    @Operation(summary = "Khôi phục giao dịch", description = "Phục hồi giao dịch từ thùng rác và tính lại tiền vào ví.")
+    public ApiResponse<Transaction> restoreTransaction(
+            @Parameter(description = "ID của giao dịch trong thùng rác") @PathVariable String id) {
+        return new ApiResponse<>(200, "Đã khôi phục thành công!", transactionService.restoreTransaction(id));
+    }
+
+    @DeleteMapping("/{id}/force")
+    @Operation(summary = "Xóa vĩnh viễn", description = "Xóa hẳn giao dịch khỏi Database. Hành động này không thể hoàn tác!")
+    public ApiResponse<String> forceDeleteTransaction(
+            @Parameter(description = "ID của giao dịch") @PathVariable String id) {
+        transactionService.forceDeleteTransaction(id);
+        return new ApiResponse<>(200, "Đã dọn dẹp vĩnh viễn khỏi thùng rác!", "ID: " + id);
+    }
+
+    // --- NHÓM 4: MEDIA & NHÓM ---
 
     @PostMapping(value = "/{id}/upload-receipt", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Đính kèm ảnh hóa đơn", description = "Upload file ảnh (.jpg, .png) < 5MB lên Cloudinary và gắn link vào giao dịch này.")
